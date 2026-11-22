@@ -1,0 +1,967 @@
+/* El mapa ya trae sus propios colores: se pide al navegador que no los reinterprete en modo oscuro */
+:root {
+    color-scheme: only light;
+}
+
+/* Sin el destello gris que Chrome en Android dibuja sobre lo que se toca (se veía como "parpadeos" al mover el mapa) */
+html, body, * {
+    -webkit-tap-highlight-color: transparent;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body, html {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    position: relative;
+    touch-action: none;
+}
+
+.mapa-fondo {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    background: #e9ecef;
+    contain: layout paint;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+}
+
+.mapa-fondo:active {
+    cursor: grabbing;
+}
+
+.mapa-placeholder {
+    position: absolute;
+    inset: 0;
+}
+
+/* Las etiquetas de texto no capturan toques: el toque pasa al salón/estructura que hay debajo */
+#svg1 text,
+#svg1 tspan {
+    pointer-events: none;
+}
+
+#svg1 {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: block;
+    max-width: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    transform-origin: 0 0;
+    touch-action: none;
+}
+
+.contenedor-buscador {
+    position: fixed;
+    top: 15px;
+    left: 15px;
+    right: 75px;
+    z-index: 10;
+    max-width: 400px;
+    touch-action: auto;
+}
+
+.buscador-flotante {
+    display: flex;
+    background: white;
+    padding: 4px 8px;
+    border-radius: 24px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    align-items: center;
+    transition: box-shadow 0.2s ease;
+}
+
+.buscador-flotante:focus-within {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.buscador-flotante input {
+    border: none;
+    outline: none;
+    padding: 10px 14px;
+    width: 100%;
+    font-size: 0.95rem;
+    background: transparent;
+    color: #202124;
+}
+
+.buscador-flotante button {
+    background: transparent;
+    border: none;
+    padding: 0 10px;
+    cursor: pointer;
+    font-size: 1.1rem;
+    color: #5f6368;
+}
+
+.sugerencias-box {
+    background: white;
+    margin-top: 8px;
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    overflow: hidden;
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid #dadce0;
+    touch-action: pan-y;
+}
+
+.sugerencias-box.oculto {
+    display: none;
+}
+
+.sugerencia-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #3c4043;
+    border-bottom: 1px solid #f1f3f4;
+    transition: background-color 0.15s ease;
+}
+
+.sugerencia-item:last-child {
+    border-bottom: none;
+}
+
+.sugerencia-item:hover {
+    background-color: #f8f9fa;
+}
+
+.sugerencia-icono {
+    margin-right: 14px;
+    font-size: 1.1rem;
+    color: #70757a;
+    width: 20px;
+    text-align: center;
+}
+
+.sugerencia-texto {
+    display: flex;
+    flex-direction: column;
+}
+
+.sugerencia-titulo {
+    font-weight: 500;
+    color: #202124;
+}
+
+.sugerencia-subtitulo {
+    font-size: 0.75rem;
+    color: #70757a;
+}
+
+/* Panel emergente principal */
+.panel-emergente {
+    position: fixed;
+    top: 75px;
+    left: 15px;
+    bottom: 15px;
+    width: 520px;
+    max-width: calc(100vw - 30px);
+    background: white;
+    z-index: 9;
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    overflow: visible; 
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+    transform: translateX(-110%);
+    opacity: 0;
+    pointer-events: none;
+    touch-action: auto;
+}
+
+.panel-emergente.activo {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Estado minimizado lateral */
+.panel-emergente.minimizado {
+    transform: translateX(calc(-100% - 25px)) !important;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.panel-emergente.minimizado .panel-scroll {
+    pointer-events: none;
+}
+
+/* Botón de cerrar panel (X) */
+.btn-cerrar {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    z-index: 10;
+    background: white;
+    border: none;
+    font-size: 1.6rem;
+    line-height: 1;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    color: #5f6368;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease;
+}
+
+.btn-cerrar:hover {
+    background-color: #f1f3f4;
+    color: #202124;
+}
+
+/* Área táctil ampliada (≈ 48 px) sin cambiar el aspecto del botón */
+.btn-cerrar::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+}
+
+/* Pestaña flotante lateral estilo Google Maps */
+.btn-minimizar-lateral {
+    position: absolute;
+    top: 50%;
+    right: -18px;
+    transform: translateY(-50%);
+    z-index: 12;
+    background: white;
+    border: 1px solid #dadce0;
+    font-size: 1.4rem;
+    font-weight: bold;
+    line-height: 1;
+    width: 36px;
+    height: 54px;
+    border-radius: 0 8px 8px 0;
+    cursor: pointer;
+    color: #5f6368;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 2px 2px 6px rgba(0,0,0,0.15);
+    transition: background-color 0.2s ease, color 0.2s ease, right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-minimizar-lateral:hover {
+    background-color: #f8f9fa;
+    color: #202124;
+}
+
+.panel-emergente.minimizado .btn-minimizar-lateral {
+    right: -45px;
+    border-radius: 0 8px 8px 0;
+    box-shadow: 4px 2px 8px rgba(0,0,0,0.2);
+}
+
+.panel-scroll {
+    width: 100%;
+    height: 100%;
+    padding: 45px 12px 15px 12px;
+    overflow-y: auto;
+    overflow-x: auto;
+    touch-action: pan-x pan-y;
+}
+
+.tabla-horario {
+    width: 100%;
+    min-width: 580px;
+    border-collapse: collapse;
+    font-size: 0.7rem;
+    margin-top: 15px;
+    table-layout: auto;
+}
+
+.tabla-horario th:first-child,
+.tabla-horario td:first-child {
+    width: 50px;
+    min-width: 50px;
+    text-align: center;
+    font-weight: bold;
+    background-color: #f8f9fa;
+}
+
+.tabla-horario th {
+    background: #f1f3f4;
+    padding: 6px 8px;
+    font-size: 0.68rem;
+    color: #3c4043;
+    border: 1px solid #9e9e9e;
+    white-space: nowrap;
+}
+
+.tabla-horario td {
+    border: 1px solid #9e9e9e;
+    padding: 4px 6px;
+    vertical-align: middle;
+    text-align: center;
+    height: auto;
+    min-height: 48px;
+    min-width: 85px;
+}
+
+.bloque-celda {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    width: 100%;
+    padding: 2px 0;
+}
+
+.materia-sec {
+    font-weight: bold;
+    font-size: 0.68rem;
+    color: #1a73e8;
+    line-height: 1.1;
+    white-space: nowrap;
+    display: inline-block;
+}
+
+.salon-tag {
+    font-size: 0.62rem;
+    color: #1a73e8;
+    margin-top: 2px;
+    cursor: pointer;
+    font-weight: bold;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    transition: color 0.15s ease;
+}
+
+.salon-tag:hover {
+    color: #1557b0;
+    text-decoration-style: solid;
+}
+
+.separador-bloque {
+    border: 0;
+    border-top: 1px dashed #d1d5db;
+    margin: 4px 0;
+    width: 100%;
+}
+
+.leyenda-seccion {
+    margin-top: 20px;
+    padding-top: 12px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.leyenda-seccion ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.leyenda-seccion li {
+    margin-bottom: 6px;
+    font-size: 0.75rem;
+    color: #3c4043;
+    line-height: 1.3;
+}
+
+.leyenda-seccion li strong {
+    color: #1a73e8;
+}
+
+.btn-hamburguesa {
+    position: fixed;
+    top: 15px;
+    right: 15px;
+    z-index: 1000;
+    width: 45px;
+    height: 45px;
+    background: #ffffff;
+    border: none;
+    border-radius: 50%;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    transition: transform 0.2s ease, background-color 0.2s ease;
+    touch-action: auto;
+}
+
+.btn-hamburguesa:hover {
+    transform: scale(1.05);
+    background-color: #f8f9fa;
+}
+
+.btn-hamburguesa .linea {
+    width: 20px;
+    height: 2.5px;
+    background-color: #3c4043;
+    border-radius: 2px;
+}
+
+.panel-opciones-drawer {
+    position: fixed;
+    top: 0;
+    right: -360px;
+    width: 340px;
+    height: 100vh;
+    background: #ffffff;
+    z-index: 1002;
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
+    transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    touch-action: auto;
+}
+
+.panel-opciones-drawer.activo {
+    right: 0;
+}
+
+.encabezado-drawer {
+    padding: 18px 20px;
+    background: #1a73e8;
+    color: #ffffff;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.encabezado-drawer h3 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.btn-cerrar-drawer {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 1.8rem;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.contenido-drawer {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+    touch-action: pan-y;
+}
+
+.seccion-drawer h4 {
+    margin: 0 0 8px 0;
+    color: #202124;
+}
+
+.subtexto-drawer {
+    font-size: 0.85rem;
+    color: #5f6368;
+    margin-bottom: 15px;
+    line-height: 1.4;
+}
+
+.btn-consultar {
+    width: 100%;
+    background: #1a73e8;
+    color: white;
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: bold;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.btn-consultar:hover {
+    background: #1557b0;
+}
+
+.separador-drawer {
+    border: none;
+    border-top: 1px solid #e8eaed;
+    margin: 20px 0;
+}
+
+.overlay-drawer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 1001;
+    display: none;
+}
+
+.overlay-drawer.activo {
+    display: block;
+}
+
+/* Ventana pequeña con el nombre de una estructura */
+.panel-info {
+    position: fixed;
+    top: 75px;
+    left: 15px;
+    min-width: 240px;
+    max-width: calc(100vw - 30px);
+    padding: 16px 48px 16px 20px;
+    background: white;
+    z-index: 9;
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    transition: transform 0.3s ease, opacity 0.3s ease;
+    transform: translateX(-110%);
+    opacity: 0;
+    pointer-events: none;
+    touch-action: auto;
+}
+
+.panel-info.activo {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.info-tipo {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #1a73e8;
+    margin-bottom: 4px;
+}
+
+.info-nombre {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #202124;
+    line-height: 1.3;
+}
+
+/* Selector de qué resaltar */
+.opciones-busqueda {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 15px;
+}
+
+.opcion-busqueda {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid #dadce0;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #3c4043;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.opcion-busqueda:hover {
+    background: #f8f9fa;
+}
+
+.opcion-busqueda:has(input:checked) {
+    border-color: #1a73e8;
+    background: #e8f0fe;
+    color: #1a73e8;
+    font-weight: 600;
+}
+
+.opcion-busqueda input {
+    accent-color: #1a73e8;
+}
+
+/* ===== Resaltado en el mapa =====
+   Un solo color de acento por estado: azul = lo que buscaste, verde = disponible.
+   Para cambiar el look basta con editar estas variables. */
+:root {
+    --resalte: #1a73e8;           /* contorno y halo de lo buscado */
+    --resalte-relleno: #aecbfa;   /* relleno suave de lo buscado */
+    --libre: #00897b;             /* contorno y halo de salones libres */
+    --libre-relleno: #80cbc4;     /* relleno suave de salones libres */
+}
+
+.salon, .salon * {
+    transition: fill 0.25s ease;
+}
+
+.salon-resaltado, .salon-resaltado * { fill: var(--resalte-relleno) !important; }
+.salon-libre, .salon-libre * { fill: var(--libre-relleno) !important; }
+
+/* Capa superior: contorno nítido + halo translúcido (sin filtros: ligero para la GPU/RAM) */
+.contorno-resaltado, .contorno-libre,
+.halo-resaltado, .halo-libre {
+    fill: none !important;
+    stroke-linejoin: round;
+    pointer-events: none;
+}
+
+.contorno-resaltado { stroke: var(--resalte) !important; stroke-width: 5px !important; }
+.contorno-libre     { stroke: var(--libre) !important;   stroke-width: 5px !important; }
+
+.halo-resaltado, .halo-libre {
+    stroke-width: 16px !important;
+    stroke-opacity: 0.25;
+    animation: respirar 1.3s ease-in-out 2; /* dos "latidos" al aparecer y se queda fijo */
+}
+.halo-resaltado { stroke: var(--resalte) !important; }
+.halo-libre     { stroke: var(--libre) !important; }
+
+@keyframes respirar {
+    0%, 100% { stroke-opacity: 0.25; }
+    50%      { stroke-opacity: 0.65; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .halo-resaltado, .halo-libre { animation: none; }
+}
+
+/* Estado del salón (libre / ocupado) en el panel de horarios */
+.estado-salon {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.estado-punto {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+}
+
+.estado-libre { background: #e6f4ea; color: #137333; }
+.estado-ocupado { background: #fce8e6; color: #c5221f; }
+
+/* Duración mínima para "Salones libres ahora" */
+.filtro-duracion {
+    margin: -4px 0 15px;
+    font-size: 0.85rem;
+    color: #3c4043;
+}
+
+.filtro-duracion[hidden] {
+    display: none;
+}
+
+.filtro-duracion select {
+    width: 100%;
+    margin-top: 6px;
+    padding: 9px 10px;
+    border: 1px solid #dadce0;
+    border-radius: 8px;
+    background: #ffffff;
+    font-size: 0.9rem;
+    color: #202124;
+}
+
+/* ===== Pantalla de carga / error del mapa ===== */
+.pantalla-carga {
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: #f1f3f4;
+    text-align: center;
+    transition: opacity 0.3s ease;
+}
+
+.pantalla-carga[hidden] { display: none; }
+.pantalla-carga.oculta { opacity: 0; pointer-events: none; }
+
+.carga-contenido {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    max-width: 360px;
+}
+
+.carga-logo {
+    width: min(220px, 62vw);
+    height: auto;
+    margin-bottom: 4px;
+}
+
+.carga-spinner {
+    width: 34px;
+    height: 34px;
+    border: 3px solid #dadce0;
+    border-top-color: #1a73e8;
+    border-radius: 50%;
+    animation: girar 0.9s linear infinite;
+}
+
+@keyframes girar { to { transform: rotate(360deg); } }
+
+.carga-titulo {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #202124;
+}
+
+.carga-detalle {
+    min-height: 1.2em;
+    font-size: 0.88rem;
+    line-height: 1.4;
+    color: #5f6368;
+}
+
+.pantalla-carga.error .carga-spinner { display: none; }
+.pantalla-carga.error .carga-logo { filter: grayscale(1); opacity: 0.55; }
+
+.btn-reintentar {
+    width: auto;
+    margin-top: 8px;
+    padding: 10px 26px;
+}
+
+.btn-reintentar[hidden] { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+    .carga-spinner { animation-duration: 2.5s; }
+}
+
+/* ===== Avisos breves ===== */
+.avisos {
+    position: fixed;
+    left: 16px;
+    right: 72px;
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    z-index: 1500;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.aviso {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 520px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #323232;
+    color: #ffffff;
+    font-size: 0.88rem;
+    line-height: 1.35;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    pointer-events: auto;
+    animation: aviso-entra 0.25s ease;
+}
+
+.aviso-error { border-left: 4px solid #f28b82; }
+
+@keyframes aviso-entra {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.aviso-accion {
+    padding: 6px 4px;
+    border: none;
+    background: none;
+    color: #8ab4f8;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.aviso-cerrar {
+    padding: 0 2px;
+    border: none;
+    background: none;
+    color: #bdc1c6;
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+/* ===== Controles de zoom ===== */
+.controles-mapa {
+    position: fixed;
+    right: 15px;
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    z-index: 8;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    touch-action: manipulation;
+}
+
+.controles-zoom {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.btn-control {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: none;
+    background: #ffffff;
+    color: #3c4043;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-control-redondo {
+    border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.controles-zoom .btn-control + .btn-control { border-top: 1px solid #e8eaed; }
+.btn-control:hover:not(:disabled) { background: #f1f3f4; color: #202124; }
+.btn-control:disabled { color: #bdc1c6; cursor: default; }
+.btn-control[hidden] { display: none; }
+.btn-control.activo, .btn-control.activo:hover:not(:disabled) { color: #1a73e8; }
+
+/* Ubicación por GPS (punto azul) */
+.gps-precision { fill: rgba(26, 115, 232, 0.15); stroke: rgba(26, 115, 232, 0.35); stroke-width: 0.3; }
+.gps-halo { fill: #ffffff; }
+.gps-punto { fill: #1a73e8; }
+.btn-control:focus-visible { outline: 2px solid #1a73e8; outline-offset: -2px; }
+
+/* ===== Teléfono: el panel de horarios es una hoja inferior (ver HOJA_MOVIL en app.js) ===== */
+.asa-hoja { display: none; }
+
+@media (max-width: 768px) {
+    .panel-emergente {
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: auto;
+        max-width: none;
+        height: calc(100vh - 70px);
+        height: calc(100dvh - 70px);
+        border-radius: 16px 16px 0 0;
+        transform: translateY(100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+        touch-action: none;
+    }
+    .panel-emergente.activo,
+    .panel-emergente.activo.minimizado {
+        transform: translateY(calc(100% - 38vh)) !important;
+        transform: translateY(calc(100% - 38dvh)) !important;
+    }
+    .panel-emergente.activo.expandido {
+        transform: translateY(0) !important;
+        touch-action: auto;
+    }
+    .panel-emergente .btn-minimizar-lateral { display: none; }
+    /* Estado bajo: solo asoman el asa y la X (¡64px igual que alturaBajaPx en app.js!) */
+    .panel-emergente.activo.hoja-baja { transform: translateY(calc(100% - 64px)) !important; }
+    .panel-emergente.hoja-baja .panel-scroll { opacity: 0; pointer-events: none; }
+    .panel-emergente .panel-scroll { transition: opacity 0.2s ease; }
+
+    /* X más grande y siempre por encima del asa */
+    .panel-emergente .btn-cerrar {
+        top: 6px;
+        right: 8px;
+        width: 40px;
+        height: 40px;
+        z-index: 13;
+        touch-action: manipulation;
+    }
+
+    .asa-hoja {
+        display: flex;
+        position: absolute;
+        top: 0;
+        left: 60px;   /* deja libre la zona de la X */
+        right: 60px;
+        height: 34px;
+        padding: 0;
+        border: none;
+        background: transparent;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        touch-action: none;
+        z-index: 11;
+    }
+    .asa-barra {
+        width: 40px;
+        height: 4px;
+        border-radius: 2px;
+        background: #c4c7c5;
+    }
+    .panel-emergente .panel-scroll {
+        padding-top: 36px;
+        padding-bottom: calc(15px + env(safe-area-inset-bottom, 0px));
+        overflow: hidden;
+        touch-action: none;
+    }
+    .panel-emergente.expandido .panel-scroll {
+        overflow-y: auto;
+        overflow-x: auto;
+        touch-action: pan-x pan-y;
+    }
+
+    .controles-mapa, .avisos { transition: bottom 0.3s ease, opacity 0.2s ease; }
+    body.hoja-asomada .controles-mapa { bottom: calc(38vh + 12px); bottom: calc(38dvh + 12px); }
+    body.hoja-asomada .avisos { bottom: calc(38vh + 12px); bottom: calc(38dvh + 12px); }
+    body.hoja-baja .controles-mapa { bottom: calc(64px + 12px); }
+    body.hoja-baja .avisos { bottom: calc(64px + 12px); }
+    body.hoja-expandida .controles-mapa { opacity: 0; pointer-events: none; }
+}
+
+/* Panel de diagnóstico del GPS (?gpsdebug) */
+#gps-debug {
+    position: fixed;
+    left: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    z-index: 2000;
+    max-width: calc(100vw - 80px);
+    background: rgba(0, 0, 0, 0.82);
+    color: #fff;
+    font: 11px/1.45 monospace;
+    padding: 8px 10px;
+    border-radius: 8px;
+}
+#gps-debug-datos { white-space: pre; }
+.gps-debug-botones { display: flex; gap: 6px; margin-top: 6px; }
+.gps-debug-botones button { font: inherit; padding: 4px 8px; border: none; border-radius: 6px; background: #3c4043; color: #fff; }
+#gps-debug-texto { display: block; width: 100%; height: 90px; margin-top: 6px; font: inherit; }
+#gps-debug-texto[hidden] { display: none; }
+#gps-debug.minimizado #gps-debug-datos, #gps-debug.minimizado #gps-debug-texto { display: none; }
